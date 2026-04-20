@@ -47,42 +47,57 @@ dtype       = float32
 
 ## Équations (v0)
 
-Pour chaque couche ℓ, avec X^(ℓ) ∈ R^(T×d) :
+Pour chaque couche $\ell$, avec $X^{(\ell)} \in \mathbb{R}^{T \times d}$ :
 
-```
-U^(ℓ)   = RMSNorm(X^(ℓ))
-Q, K, V = U^(ℓ) W_Q, U^(ℓ) W_K, U^(ℓ) W_V        # [T, d]
-```
+$$
+U^{(\ell)} = \mathrm{RMSNorm}(X^{(\ell)})
+$$
 
-Pour chaque tête h (split de Q,K,V en H blocs de taille d_h) :
+$$
+Q = U^{(\ell)} W_Q, \quad K = U^{(\ell)} W_K, \quad V = U^{(\ell)} W_V \in \mathbb{R}^{T \times d}
+$$
 
-```
-S_h   = Q_h K_hᵀ / sqrt(d_h) + M      avec M_ij = 0 si j≤i, -∞ sinon
-A_h   = softmax(S_h)
-C_h   = A_h V_h
-C     = concat(C_1, ..., C_H)
-O     = C W_O
-R^(ℓ) = X^(ℓ) + O
-```
+Pour chaque tête $h$ (split de $Q, K, V$ en $H$ blocs de taille $d_h$), avec le mask causal
+
+$$
+M_{ij} = \begin{cases} 0 & \text{si } j \le i \\ -\infty & \text{sinon} \end{cases}
+$$
+
+on a
+
+$$
+S_h = \frac{Q_h K_h^\top}{\sqrt{d_h}} + M, \quad A_h = \mathrm{softmax}(S_h), \quad C_h = A_h V_h
+$$
+
+$$
+C = \mathrm{Concat}(C_1, \dots, C_H), \quad O = C W_O, \quad R^{(\ell)} = X^{(\ell)} + O
+$$
 
 Puis SwiGLU :
 
-```
-Z^(ℓ)     = RMSNorm(R^(ℓ))
-F(z)      = W_down ( SiLU(z W_up) ⊙ (z W_gate) )
-X^(ℓ+1)   = R^(ℓ) + F(Z^(ℓ))
-```
+$$
+Z^{(\ell)} = \mathrm{RMSNorm}(R^{(\ell)})
+$$
+
+$$
+F^{(\ell)}(z) = W_{\text{down}}^{(\ell)} \Big( \mathrm{SiLU}(z W_{\text{up}}^{(\ell)}) \odot (z W_{\text{gate}}^{(\ell)}) \Big)
+$$
+
+$$
+X^{(\ell+1)} = R^{(\ell)} + F^{(\ell)}(Z^{(\ell)})
+$$
 
 Logits finaux (tied embeddings) :
 
-```
-Y      = RMSNorm(X^(L))
-logits = Y · Eᵀ        # [T, V]
-```
+$$
+Y = \mathrm{RMSNorm}(X^{(L)}), \quad \mathrm{logits} = Y E^\top \in \mathbb{R}^{T \times V}
+$$
 
-RMSNorm :  `RMSNorm(x)_i = x_i / sqrt(mean(x²) + ε) * g_i`
+Définitions auxiliaires :
 
-SiLU :     `SiLU(x) = x · σ(x)`
+$$
+\mathrm{RMSNorm}(x)_i = \frac{x_i}{\sqrt{\tfrac{1}{d}\sum_{j=1}^{d} x_j^2 + \varepsilon}} \cdot g_i, \qquad \mathrm{SiLU}(x) = x \cdot \sigma(x)
+$$
 
 ---
 
@@ -93,30 +108,111 @@ Elle guide les choix de design pour que l'on puisse y migrer sans tout casser.
 
 ### Embeddings
 
-- V ≈ 32000, d = 576, tying sortie/embedding : `u_i = z_i^(L) · Eᵀ`
+Matrice d'embedding $E \in \mathbb{R}^{V \times d}$ avec $V \approx 32000$ et $d = 576$. Pour une séquence de tokens $(t_0, \dots, t_n)$ :
+
+$$
+X^{(0)} = \begin{bmatrix} e_{t_0} \\ \vdots \\ e_{t_n} \end{bmatrix} \in \mathbb{R}^{(n+1) \times 576}
+$$
+
+Avec tying en sortie : $u_i = z_i^{(L)} E^\top$.
 
 ### Attention : GQA + RoPE
 
-- 14 couches
-- 12 query heads, 3 KV heads (groupes de 4), head_dim = 48
-- RoPE appliqué sur Q et K
-- `S_h = (Q̃_h · K̃_g(h)ᵀ) / sqrt(48) + M`
+14 couches, 12 query heads, 3 KV heads (groupes de 4), $d_h = 48$. À chaque couche $\ell$ :
+
+$$
+U^{(\ell)} = \mathrm{RMSNorm}(X^{(\ell)})
+$$
+
+Projections (query par tête, key/value par groupe) :
+
+$$
+Q_h^{(\ell)} = U^{(\ell)} W_{Q,h}^{(\ell)}, \quad h = 1, \dots, 12
+$$
+
+$$
+K_g^{(\ell)} = U^{(\ell)} W_{K,g}^{(\ell)}, \quad V_g^{(\ell)} = U^{(\ell)} W_{V,g}^{(\ell)}, \quad g = 1, 2, 3
+$$
+
+RoPE sur $Q, K$ :
+
+$$
+\tilde{Q}_h^{(\ell)} = \mathrm{RoPE}(Q_h^{(\ell)}), \quad \tilde{K}_g^{(\ell)} = \mathrm{RoPE}(K_g^{(\ell)})
+$$
+
+Pour chaque tête $h$, avec $g(h) \in \{1, 2, 3\}$ son groupe :
+
+$$
+S_h^{(\ell)} = \frac{\tilde{Q}_h^{(\ell)} \tilde{K}_{g(h)}^{(\ell) \top}}{\sqrt{48}} + M_h^{(\ell)}, \quad A_h^{(\ell)} = \mathrm{softmax}(S_h^{(\ell)}), \quad C_h^{(\ell)} = A_h^{(\ell)} V_{g(h)}^{(\ell)}
+$$
+
+Puis
+
+$$
+C^{(\ell)} = \mathrm{Concat}(C_1^{(\ell)}, \dots, C_{12}^{(\ell)}), \quad O^{(\ell)} = C^{(\ell)} W_O^{(\ell)}, \quad R^{(\ell)} = X^{(\ell)} + O^{(\ell)}
+$$
 
 ### Attention hybride local / global
 
 Pattern par couche, sur 14 couches : 10 locales + 4 globales.
 
-```
+$$
 [L, L, L, G, L, L, L, G, L, L, G, L, L, G]
-```
+$$
 
-Global aux couches ℓ ∈ {4, 8, 11, 14}. Sliding window w = 512 pour les locales.
+Global aux couches $\ell \in \{4, 8, 11, 14\}$.
+
+**Couche locale** (fenêtre $w$) :
+
+$$
+M_{ij}^{(\ell)} = \begin{cases} 0 & \text{si } \max(0, i - w + 1) \le j \le i \\ -\infty & \text{sinon} \end{cases}
+$$
+
+**Couche globale** (causal complet) :
+
+$$
+M_{ij}^{(\ell)} = \begin{cases} 0 & \text{si } j \le i \\ -\infty & \text{sinon} \end{cases}
+$$
+
+Fenêtre recommandée : $w = 512$ (testable $w \in \{512, 1024\}$).
 
 ### FFN : dense + MoE
 
-- d_ff = 1536, SwiGLU
-- 10 FFN denses + 4 FFN MoE (4 experts, top-2 routing)
-- MoE sur ℓ ∈ {7, 9, 11, 13}
+$d_{\text{ff}} = 1536$, SwiGLU. 10 FFN denses + 4 FFN MoE (4 experts, top-2 routing), MoE sur $\ell \in \{7, 9, 11, 13\}$.
+
+**FFN dense.** Après seconde RMSNorm :
+
+$$
+Z^{(\ell)} = \mathrm{RMSNorm}(R^{(\ell)})
+$$
+
+$$
+F^{(\ell)}(z) = W_{\text{down}}^{(\ell)} \Big( \mathrm{SiLU}(z W_{\text{up}}^{(\ell)}) \odot (z W_{\text{gate}}^{(\ell)}) \Big), \quad X^{(\ell+1)} = R^{(\ell)} + F^{(\ell)}(Z^{(\ell)})
+$$
+
+**FFN MoE** avec 4 experts, chaque expert
+
+$$
+F_e^{(\ell)}(z) = W_{\text{down},e}^{(\ell)} \Big( \mathrm{SiLU}(z W_{\text{up},e}^{(\ell)}) \odot (z W_{\text{gate},e}^{(\ell)}) \Big), \quad e = 1, \dots, 4
+$$
+
+Routeur :
+
+$$
+a_i^{(\ell)} = z_i^{(\ell)} W_r^{(\ell)} \in \mathbb{R}^4, \quad \mathcal{S}_i^{(\ell)} = \mathrm{Top2}(a_i^{(\ell)})
+$$
+
+Poids (softmax restreint aux experts top-2) :
+
+$$
+g_{i,e}^{(\ell)} = \begin{cases} \dfrac{\exp(a_{i,e}^{(\ell)})}{\sum_{e' \in \mathcal{S}_i^{(\ell)}} \exp(a_{i,e'}^{(\ell)})} & \text{si } e \in \mathcal{S}_i^{(\ell)} \\ 0 & \text{sinon} \end{cases}
+$$
+
+Sortie MoE et résiduel :
+
+$$
+Y_i^{(\ell)} = \sum_{e=1}^{4} g_{i,e}^{(\ell)} F_e^{(\ell)}(z_i^{(\ell)}), \quad X_i^{(\ell+1)} = R_i^{(\ell)} + Y_i^{(\ell)}
+$$
 
 ### Répartition finale v1
 
@@ -147,9 +243,21 @@ Global aux couches ℓ ∈ {4, 8, 11, 14}. Sliding window w = 512 pour les local
 
 Loss totale :
 
-```
-L_tot = L_LM + λ_bal · Σ_{ℓ ∈ L_MoE} L_bal^(ℓ)
-```
+$$
+\mathcal{L}_{\text{tot}} = \mathcal{L}_{\text{LM}} + \lambda_{\text{bal}} \sum_{\ell \in \mathcal{L}_{\text{MoE}}} \mathcal{L}_{\text{bal}}^{(\ell)}
+$$
+
+### Config cible v1 (résumé)
+
+$$
+L = 14, \quad d = 576, \quad H_q = 12, \quad H_{kv} = 3, \quad d_{\text{ff}} = 1536, \quad V = 32\text{k}
+$$
+
+$$
+10 \text{ local} + 4 \text{ global}, \quad w = 512, \quad 4 \text{ MoE layers}, \quad 4 \text{ experts}, \quad \text{top-2}
+$$
+
+Total $\approx 99\text{M}$ paramètres, actif par token nettement inférieur grâce au top-2 MoE.
 
 ### Roadmap v0 → v1
 
