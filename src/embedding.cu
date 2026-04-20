@@ -50,4 +50,68 @@ void launch_logits_tied(const float* X, const float* E, float* logits,
     CUDA_CHECK_LAST();
 }
 
+// dE[ids[t], d] += dout[t, d]  via atomicAdd (ids can repeat).
+__global__ void embedding_bwd_kernel(const int* __restrict__ ids,
+                                     const float* __restrict__ dout,
+                                     float* __restrict__ dE,
+                                     int T, int V, int D) {
+    int t = blockIdx.y;
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= T || d >= D) return;
+    int id = ids[t];
+    if (id < 0 || id >= V) return;
+    atomicAdd(dE + id * D + d, dout[t * D + d]);
+}
+
+void launch_embedding_backward(const int* ids, const float* dout, float* dE,
+                               int T, int V, int D) {
+    const int block = 128;
+    dim3 grid((D + block - 1) / block, T);
+    embedding_bwd_kernel<<<grid, block>>>(ids, dout, dE, T, V, D);
+    CUDA_CHECK_LAST();
+}
+
+// dX[t, d] = sum_v dlogits[t, v] * E[v, d]
+__global__ void logits_tied_bwd_dX_kernel(const float* __restrict__ dlogits,
+                                          const float* __restrict__ E,
+                                          float* __restrict__ dX,
+                                          int T, int D, int V) {
+    int t = blockIdx.y;
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= T || d >= D) return;
+    const float* dlr = dlogits + t * V;
+    float acc = 0.0f;
+    for (int v = 0; v < V; ++v) acc += dlr[v] * E[v * D + d];
+    dX[t * D + d] = acc;
+}
+
+// dE[v, d] += sum_t dlogits[t, v] * X[t, d]
+__global__ void logits_tied_bwd_dE_kernel(const float* __restrict__ dlogits,
+                                          const float* __restrict__ X,
+                                          float* __restrict__ dE,
+                                          int T, int D, int V) {
+    int v = blockIdx.y;
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    if (v >= V || d >= D) return;
+    float acc = 0.0f;
+    for (int t = 0; t < T; ++t) acc += dlogits[t * V + v] * X[t * D + d];
+    dE[v * D + d] += acc;
+}
+
+void launch_logits_tied_backward(const float* dlogits, const float* X, const float* E,
+                                 float* dX, float* dE,
+                                 int T, int D, int V) {
+    const int block = 128;
+    {
+        dim3 grid((D + block - 1) / block, T);
+        logits_tied_bwd_dX_kernel<<<grid, block>>>(dlogits, E, dX, T, D, V);
+        CUDA_CHECK_LAST();
+    }
+    {
+        dim3 grid((D + block - 1) / block, V);
+        logits_tied_bwd_dE_kernel<<<grid, block>>>(dlogits, X, dE, T, D, V);
+        CUDA_CHECK_LAST();
+    }
+}
+
 }  // namespace toyllm

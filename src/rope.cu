@@ -52,4 +52,42 @@ void launch_rope(float* X, int T, int H, int dh, float base) {
     CUDA_CHECK_LAST();
 }
 
+// Inverse rotation: apply R(-phi) to dX. The forward matrix R(phi) is
+// orthogonal, so d/dx = Rᵀ = R(-phi). In-place.
+__global__ void rope_bwd_kernel(float* __restrict__ dX,
+                                int T, int H, int dh, float inv_dh, float log_base) {
+    int h = blockIdx.z;
+    int t = blockIdx.y;
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    int half = dh >> 1;
+    if (h >= H || t >= T || k >= half) return;
+
+    float theta = expf(-2.0f * static_cast<float>(k) * inv_dh * log_base);
+    float phi = static_cast<float>(t) * theta;
+    float c = cosf(phi);
+    float s = sinf(phi);
+
+    float* row = dX + (t * H + h) * dh;
+    float y0 = row[2 * k];
+    float y1 = row[2 * k + 1];
+    // Inverse rotation: x0 = y0*c + y1*s, x1 = -y0*s + y1*c.
+    row[2 * k]     = y0 * c + y1 * s;
+    row[2 * k + 1] = -y0 * s + y1 * c;
+}
+
+void launch_rope_backward(float* dX, int T, int H, int dh, float base) {
+    if ((dh & 1) != 0) {
+        std::fprintf(stderr, "launch_rope_backward: dh must be even, got %d\n", dh);
+        std::exit(1);
+    }
+    const int half = dh >> 1;
+    const float inv_dh = 1.0f / static_cast<float>(dh);
+    const float log_base = logf(base);
+
+    dim3 block(32);
+    dim3 grid((half + block.x - 1) / block.x, T, H);
+    rope_bwd_kernel<<<grid, block>>>(dX, T, H, dh, inv_dh, log_base);
+    CUDA_CHECK_LAST();
+}
+
 }  // namespace toyllm

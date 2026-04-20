@@ -22,11 +22,16 @@ Ce qui tourne **aujourd'hui** :
 - Forward pass CUDA d'un tiny decoder-only Transformer :
   - token embeddings
   - RMSNorm pre-norm
-  - causal multi-head self-attention (MHA dense, pas de GQA/RoPE/KV cache)
+  - causal multi-head self-attention avec RoPE
   - SwiGLU FFN
   - résidus
   - RMSNorm finale
   - projection de sortie en **weight tying** avec l'embedding
+- **Backward manuel** kernel par kernel (matmul, rmsnorm, softmax, rope,
+  attention, swiglu, embedding, logits tied, cross-entropy)
+- **AdamW** avec weight decay découplé
+- **Training** depuis un corpus + save/load de checkpoints (.bin custom,
+  sans dépendance)
 - Génération greedy (argmax) sur CPU avec recomputation full-context
 - Float32 uniquement
 
@@ -292,22 +297,28 @@ toy_llm_cuda/
     kernels.cuh
   src/
     main.cpp            # CLI end-to-end
+    train.cpp           # boucle d'entraînement
+    checkpoint.cpp      # save/load des poids .bin
     tokenizer.cpp       # encode/decode/save/load
     bpe_train.cpp       # train BPE
     tensor.cu           # alloc/copy device <-> host
-    embedding.cu
-    matmul.cu           # GEMM naïf row-major
-    rmsnorm.cu
-    softmax.cu
-    attention.cu        # MHA causale dense
-    ffn.cu              # SwiGLU
-    model.cu            # assemblage forward
+    embedding.cu        # lookup + logits tied (fwd/bwd)
+    matmul.cu           # GEMM naïf row-major (fwd/bwd)
+    rmsnorm.cu          # RMSNorm (fwd/bwd)
+    softmax.cu          # softmax (fwd/bwd)
+    attention.cu        # MHA causale dense (fwd/bwd)
+    rope.cu             # RoPE (fwd/bwd inverse rotation)
+    ffn.cu              # SwiGLU (fwd/bwd)
+    loss.cu             # cross-entropy fused (fwd/bwd)
+    optim.cu            # AdamW
+    model.cu            # assemblage forward + backward
   tests/
     test_tokenizer.cpp
     test_bpe_train.cpp
-    test_matmul.cu
-    test_rmsnorm.cu
+    test_matmul.cu      # forward + backward (finite-diff)
+    test_rmsnorm.cu     # forward + backward (finite-diff)
     test_attention.cu
+    test_rope.cu
     test_model_smoke.cu
 ```
 
@@ -345,18 +356,33 @@ Variables Make utiles :
 
 Arguments : `<corpus> <vocab-out> <merges-out> <nb-merges>`.
 
-2. Encoder un prompt, faire tourner le forward, générer :
+2. Entraîner le modèle sur le corpus :
+
+```
+./toy_llm train data/corpus.txt tokenizer.vocab tokenizer.merges ckpt.bin 2000
+# optionnel : learning rate explicite
+./toy_llm train data/corpus.txt tokenizer.vocab tokenizer.merges ckpt.bin 2000 3e-3
+```
+
+Arguments : `<corpus> <vocab> <merges> <ckpt-out> <steps> [lr]`.
+Log la loss toutes les `steps/50` itérations.
+
+3. Génération. Sans checkpoint, les poids sont aléatoires (sortie = bruit) ;
+avec `--weights` on charge un checkpoint entraîné :
 
 ```
 ./toy_llm generate tokenizer.vocab tokenizer.merges data/prompt.txt 16
+./toy_llm generate tokenizer.vocab tokenizer.merges data/prompt.txt 16 --weights ckpt.bin
 ```
 
-Arguments : `<vocab> <merges> <prompt-file> <nb-tokens-à-générer>`.
+Arguments : `<vocab> <merges> <prompt-file> <nb-tokens-à-générer> [--weights <ckpt>]`.
 
-**Note** : en v0 les poids du modèle sont initialisés aléatoirement
-(seed fixe) à chaque run. La sortie n'a donc aucun sens linguistique ;
-ce qu'on vérifie, c'est que **le pipeline tokenizer → CUDA forward → argmax →
-detokenizer tourne de bout en bout**.
+**Sanity check du pipeline backward**: le but est de voir la loss descendre
+nettement sur quelques centaines / milliers de steps en overfit volontaire
+sur `data/corpus.txt`, et que la génération reproduise des n-grammes du
+corpus — pas de qualité linguistique attendue sur un tokenizer BPE
+byte-level et une archi toy, c'est la preuve que backprop + AdamW +
+checkpointing fonctionnent.
 
 ### Exemples détaillés
 
@@ -397,9 +423,7 @@ dans le scope de la v0.
 
 Explicitement, et volontairement :
 
-- pas de backward / autograd
-- pas d'optimiseur
-- pas de GQA, pas de RoPE, pas de KV cache
+- pas de GQA, pas de KV cache
 - pas de MoE, pas d'attention locale/globale
 - pas de FlashAttention
 - pas de float16 / bfloat16

@@ -41,14 +41,18 @@ BUILD := build
 # --- sources -----------------------------------------------------------------
 
 TOKENIZER_CPP := src/tokenizer.cpp src/bpe_train.cpp
-MAIN_CPP      := src/main.cpp
+MAIN_CPP      := src/main.cpp src/train.cpp src/checkpoint.cpp
 CUDA_SRC      := src/tensor.cu src/embedding.cu src/matmul.cu \
                  src/rmsnorm.cu src/softmax.cu src/attention.cu \
-                 src/rope.cu src/ffn.cu src/model.cu
+                 src/rope.cu src/ffn.cu src/loss.cu src/optim.cu \
+                 src/model.cu
 
 TOKENIZER_OBJ := $(patsubst src/%.cpp,$(BUILD)/%.o,$(TOKENIZER_CPP))
 MAIN_OBJ      := $(patsubst src/%.cpp,$(BUILD)/%.o,$(MAIN_CPP))
 CUDA_OBJ      := $(patsubst src/%.cu,$(BUILD)/%.o,$(CUDA_SRC))
+
+# Checkpoint.cpp uses cuda types (DeviceBuffer) via headers, compile as .cpp
+# with CUDA include path. main/train stay in C++ too.
 
 # --- binaries ----------------------------------------------------------------
 
