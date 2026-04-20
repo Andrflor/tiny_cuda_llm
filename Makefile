@@ -44,7 +44,7 @@ TOKENIZER_CPP := src/tokenizer.cpp src/bpe_train.cpp
 MAIN_CPP      := src/main.cpp
 CUDA_SRC      := src/tensor.cu src/embedding.cu src/matmul.cu \
                  src/rmsnorm.cu src/softmax.cu src/attention.cu \
-                 src/ffn.cu src/model.cu
+                 src/rope.cu src/ffn.cu src/model.cu
 
 TOKENIZER_OBJ := $(patsubst src/%.cpp,$(BUILD)/%.o,$(TOKENIZER_CPP))
 MAIN_OBJ      := $(patsubst src/%.cpp,$(BUILD)/%.o,$(MAIN_CPP))
@@ -62,6 +62,7 @@ TEST_BINS := \
     tests/test_matmul      \
     tests/test_rmsnorm     \
     tests/test_attention   \
+    tests/test_rope        \
     tests/test_model_smoke
 
 # --- default target ----------------------------------------------------------
@@ -119,6 +120,9 @@ tests/test_rmsnorm: tests/test_rmsnorm.cu $(BUILD)/rmsnorm.o | $(BUILD)
 	$(NVCC) $(NVCCFLAGS) $^ -o $@
 
 tests/test_attention: tests/test_attention.cu $(BUILD)/attention.o | $(BUILD)
+	$(NVCC) $(NVCCFLAGS) $^ -o $@
+
+tests/test_rope: tests/test_rope.cu $(BUILD)/rope.o | $(BUILD)
 	$(NVCC) $(NVCCFLAGS) $^ -o $@
 
 tests/test_model_smoke: tests/test_model_smoke.cu $(TOKENIZER_OBJ) $(CUDA_OBJ) | $(BUILD)

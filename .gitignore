@@ -1,0 +1,31 @@
+# Build artifacts
+build/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+
+# Binaires
+toy_llm
+toy_tokenizer
+tests/test_tokenizer
+tests/test_bpe_train
+tests/test_matmul
+tests/test_rmsnorm
+tests/test_attention
+tests/test_rope
+tests/test_model_smoke
+
+# Artefacts d'entraînement / runs
+tokenizer.vocab
+tokenizer.merges
+*.bin
+*.ckpt
+
+# Éditeurs / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

@@ -28,6 +28,11 @@ void launch_rmsnorm(const float* x, const float* g, float* out,
 // x : [rows, cols], in-place or out-of-place, numerically stable (minus max).
 void launch_softmax_rows(const float* x, float* out, int rows, int cols);
 
+// --- RoPE (rotary position embedding) ---
+// Applies in-place rotation to X : [T, H, dh] stored contiguous as [T, H*dh].
+// Pairs (x_{2k}, x_{2k+1}) are rotated by t · base^(-2k/dh). Requires dh even.
+void launch_rope(float* X, int T, int H, int head_dim, float base);
+
 // --- Causal masked attention ---
 // Q, K, V : [T, H, d_h] stored contiguous as [T, H*d_h] (= d_model).
 // out     : [T, H, d_h] same layout.

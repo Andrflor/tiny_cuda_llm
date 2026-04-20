@@ -122,6 +122,9 @@ void model_forward(const ModelWeights& w, const ModelConfig& cfg,
         launch_matmul(ws.U.ptr, L.W_Q.ptr, ws.Q.ptr, T_full, D, D);
         launch_matmul(ws.U.ptr, L.W_K.ptr, ws.K.ptr, T_full, D, D);
         launch_matmul(ws.U.ptr, L.W_V.ptr, ws.V.ptr, T_full, D, D);
+        // RoPE in-place on Q and K (not on V).
+        launch_rope(ws.Q.ptr, T_full, H, dh, cfg.rope_base);
+        launch_rope(ws.K.ptr, T_full, H, dh, cfg.rope_base);
         // Causal MHA  → attn_out [T, D]
         launch_causal_mha(ws.Q.ptr, ws.K.ptr, ws.V.ptr,
                           ws.scores.ptr, ws.attn_out.ptr, T_full, H, dh);

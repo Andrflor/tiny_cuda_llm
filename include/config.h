@@ -11,6 +11,7 @@ struct ModelConfig {
     int head_dim  = 32;      // d_model = n_heads * head_dim
     int ffn_dim   = 256;
     float rms_eps = 1e-5f;
+    float rope_base = 10000.0f;
     unsigned long long seed = 42ULL;
 };
 
