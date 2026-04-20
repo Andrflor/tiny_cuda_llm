@@ -1,0 +1,55 @@
+the quick brown fox jumps over the lazy dog
+the quick brown fox jumps over the sleeping cat
+a fox and a dog sat on a log
+the cat sat on the mat and the dog sat on the log
+hello world hello there hello hello hello
+goodbye world goodbye friend goodbye for now
+to be or not to be that is the question
+all that glitters is not gold
+a journey of a thousand miles begins with a single step
+practice makes perfect and repetition makes perfect
+the rain in spain falls mainly on the plain
+she sells sea shells by the sea shore
+peter piper picked a peck of pickled peppers
+how much wood would a woodchuck chuck if a woodchuck could chuck wood
+the early bird catches the worm and the second mouse gets the cheese
+a stitch in time saves nine
+look before you leap and think before you speak
+every cloud has a silver lining
+birds of a feather flock together
+actions speak louder than words
+better late than never but never late is better
+a picture is worth a thousand words
+curiosity killed the cat but satisfaction brought it back
+dont judge a book by its cover
+easy come easy go and fast friends are often fast gone
+fortune favors the bold and the prepared
+good things come to those who wait and work
+haste makes waste and patience pays
+if at first you dont succeed try try again
+knowledge is power and ignorance is bliss
+laughter is the best medicine and honesty the best policy
+many hands make light work
+no pain no gain and no guts no glory
+out of sight out of mind
+practice what you preach and preach what you practice
+quality over quantity every single time
+rome was not built in a day and neither was your skill
+strike while the iron is hot and the opportunity is fresh
+the pen is mightier than the sword
+united we stand divided we fall
+variety is the spice of life
+when in rome do as the romans do
+where there is a will there is a way
+you cant judge a book by its cover
+zebras have stripes and tigers have stripes too
+language models are built from tokens embeddings attention and feedforward layers
+a transformer has self attention and position information and normalization
+gradient descent moves parameters in the direction of steepest descent
+backpropagation applies the chain rule layer by layer from output to input
+softmax normalizes logits into a probability distribution over the vocabulary
+cross entropy is the negative log likelihood of the true label under the model
+training a language model requires a lot of text and a lot of compute
+a tokenizer splits raw text into discrete units called tokens
+byte pair encoding merges the most frequent adjacent pair at each step
+the vocabulary grows one token at a time during bpe training
